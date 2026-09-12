@@ -153,6 +153,7 @@
     search: '',
     mahalleSearch: '',
     showAddForm: false,
+    showAddStudentForm: false,
     loaded: false
   };
 
@@ -220,6 +221,7 @@
       storageAvailable = false;
     }
     state.loaded = true;
+    ensureStudentIds();
     var keys = Object.keys(state.schools);
     if(keys.length) state.activeSchool = keys[0];
     render();
@@ -256,6 +258,45 @@
     if(!state.drivers[schoolName]) state.drivers[schoolName] = {};
     state.drivers[schoolName][service] = {ad: ad.trim(), tel: tel.trim()};
     persistDrivers();
+  }
+
+  function ensureStudentIds(){
+    Object.keys(state.schools).forEach(function(schoolName){
+      state.schools[schoolName].students.forEach(function(s){
+        if(!s.id) s.id = genId();
+      });
+    });
+  }
+
+  function addStudent(schoolName, data){
+    var school = state.schools[schoolName];
+    if(!school) return;
+    school.students.push({
+      id: genId(),
+      sinif: (data.sinif||'').trim(),
+      sube: (data.sube||'').trim(),
+      no: (data.no||'').trim(),
+      adi: (data.adi||'').trim(),
+      soyadi: (data.soyadi||'').trim(),
+      servis: (data.servis||'').trim() || '(Belirtilmemiş)',
+      adres: (data.adres||'').trim(),
+      anneAdi: (data.anneAdi||'').trim(),
+      anneTel: (data.anneTel||'').trim(),
+      babaAdi: (data.babaAdi||'').trim(),
+      babaTel: (data.babaTel||'').trim()
+    });
+    persist();
+  }
+
+  function deleteStudent(schoolName, studentId){
+    var school = state.schools[schoolName];
+    if(!school) return;
+    school.students = school.students.filter(function(s){ return s.id !== studentId; });
+    persist();
+  }
+
+  function genId(){
+    return 'stu_' + Date.now().toString(36) + '_' + Math.random().toString(36).slice(2,8);
   }
 
   function parseWorkbookToStudents(workbook){
@@ -307,6 +348,7 @@
       var soyadi = get(colMap.soyadi);
       if(!adi && !soyadi) continue;
       students.push({
+        id: genId(),
         sinif: get(colMap.sinif),
         sube: get(colMap.sube),
         no: get(colMap.no),
@@ -474,6 +516,7 @@
       ]));
       return;
     }
+    if(!state.schools[state.activeSchool]){ state.activeSchool = names[0]; }
 
     var tabs = el('div', {class:'tabs'}, [
       el('div', {
@@ -494,6 +537,16 @@
     ]);
     wrap.appendChild(tabs);
 
+    var addStudentToggle = el('div', {
+      class: 'add-school-btn',
+      style:'margin-bottom:16px;',
+      onclick: function(){ state.showAddStudentForm = !state.showAddStudentForm; pendingStudentError=''; render(); }
+    }, [el('span', {text:'+ ' + state.activeSchool + ' İçin Yeni Öğrenci Ekle'})]);
+    wrap.appendChild(addStudentToggle);
+    if(state.showAddStudentForm){
+      wrap.appendChild(renderAddStudentForm());
+    }
+
     if(state.mode === 'servis'){
       renderServisMode(wrap);
     } else if(state.mode === 'mahalle'){
@@ -501,6 +554,70 @@
     } else {
       renderAraMode(wrap);
     }
+  }
+
+  var pendingStudentError = '';
+
+  function renderAddStudentForm(){
+    var card = el('div', {class:'card'});
+    card.appendChild(el('div', {class:'section-title', text:'Yeni Öğrenci'}));
+
+    var adiInput = el('input', {type:'text', placeholder:'Adı'});
+    var soyadiInput = el('input', {type:'text', placeholder:'Soyadı'});
+    var sinifInput = el('input', {type:'text', placeholder:'Sınıf (örn. 8)', style:'max-width:100px;'});
+    var subeInput = el('input', {type:'text', placeholder:'Şube (örn. B)', style:'max-width:100px;'});
+    var noInput = el('input', {type:'text', placeholder:'Okul No', style:'max-width:120px;'});
+    var servisInput = el('input', {type:'text', placeholder:'Servis No'});
+    var adresInput = el('input', {type:'text', placeholder:'Adres'});
+    var anneAdiInput = el('input', {type:'text', placeholder:'Anne adı'});
+    var anneTelInput = el('input', {type:'text', placeholder:'Anne telefonu'});
+    var babaAdiInput = el('input', {type:'text', placeholder:'Baba adı'});
+    var babaTelInput = el('input', {type:'text', placeholder:'Baba telefonu'});
+
+    var row1 = el('div', {class:'add-form'}, [adiInput, soyadiInput]);
+    var row2 = el('div', {class:'add-form'}, [sinifInput, subeInput, noInput, servisInput]);
+    var row3 = el('div', {class:'add-form'}, [adresInput]);
+    var row4 = el('div', {class:'add-form'}, [anneAdiInput, anneTelInput]);
+    var row5 = el('div', {class:'add-form'}, [babaAdiInput, babaTelInput]);
+
+    var saveBtn = el('button', {
+      class:'btn',
+      text:'Öğrenciyi Kaydet',
+      onclick: function(){
+        if(!adiInput.value.trim() || !soyadiInput.value.trim()){
+          pendingStudentError = 'Adı ve soyadı zorunlu.';
+          render();
+          return;
+        }
+        addStudent(state.activeSchool, {
+          adi: adiInput.value, soyadi: soyadiInput.value,
+          sinif: sinifInput.value, sube: subeInput.value, no: noInput.value,
+          servis: servisInput.value, adres: adresInput.value,
+          anneAdi: anneAdiInput.value, anneTel: anneTelInput.value,
+          babaAdi: babaAdiInput.value, babaTel: babaTelInput.value
+        });
+        state.showAddStudentForm = false;
+        pendingStudentError = '';
+        render();
+      }
+    });
+    var cancelBtn = el('button', {
+      class:'btn secondary',
+      text:'Vazgeç',
+      onclick: function(){ state.showAddStudentForm = false; pendingStudentError=''; render(); }
+    });
+    var row6 = el('div', {class:'add-form'}, [saveBtn, cancelBtn]);
+
+    card.appendChild(row1);
+    card.appendChild(row2);
+    card.appendChild(row3);
+    card.appendChild(row4);
+    card.appendChild(row5);
+    card.appendChild(row6);
+    if(pendingStudentError){
+      card.appendChild(el('div', {class:'err', text:pendingStudentError}));
+    }
+    return card;
   }
 
   function studentLabel(s){
@@ -530,7 +647,21 @@
       ]));
     });
     container.appendChild(el('div', {class:'card'}, [
-      el('div', {class:'section-title', text: s.adi + ' ' + s.soyadi}),
+      el('div', {style:'display:flex; justify-content:space-between; align-items:center; margin-bottom:12px;'}, [
+        el('div', {class:'section-title', text: s.adi + ' ' + s.soyadi, style:'margin-bottom:0;'}),
+        el('button', {
+          class:'btn secondary',
+          text:'Öğrenciyi Sil',
+          style:'color:var(--danger); border-color:var(--danger);',
+          onclick: function(){
+            if(confirm(s.adi + ' ' + s.soyadi + ' adlı öğrenciyi silmek istediğinize emin misiniz?')){
+              deleteStudent(schoolName, s.id);
+              container.innerHTML = '';
+              render();
+            }
+          }
+        })
+      ]),
       det
     ]));
   }
