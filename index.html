@@ -1256,20 +1256,13 @@
       services[s.servis] = (services[s.servis]||0) + 1;
     });
     var serviceKeys = Object.keys(services);
-    var maxKey = null, minKey = null;
-    serviceKeys.forEach(function(k){
-      if(maxKey === null || services[k] > services[maxKey]) maxKey = k;
-      if(minKey === null || services[k] < services[minKey]) minKey = k;
-    });
 
     var card = el('div', {class:'card'});
     card.appendChild(el('div', {class:'section-title', text: state.activeSchool + ' — Özet'}));
     var grid = el('div', {class:'summary-grid'});
     var items = [
       [school.students.length.toString(), 'Toplam öğrenci'],
-      [serviceKeys.length.toString(), 'Servis sayısı'],
-      [maxKey !== null ? ('Servis ' + maxKey + ' · ' + services[maxKey]) : '-', 'En dolu servis'],
-      [minKey !== null ? ('Servis ' + minKey + ' · ' + services[minKey]) : '-', 'En az dolu servis']
+      [serviceKeys.length.toString(), 'Servis sayısı']
     ];
     items.forEach(function(it){
       grid.appendChild(el('div', {class:'summary-item'}, [
