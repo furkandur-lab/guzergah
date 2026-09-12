@@ -339,7 +339,14 @@
   }
 
   function telHref(tel){
-    return 'tel:' + (tel||'').replace(/[^0-9+]/g, '');
+    var digits = (tel||'').replace(/[^0-9+]/g, '');
+    if(digits.indexOf('+') === 0){
+      return 'tel:' + digits;
+    }
+    if(digits.length === 10 && digits.charAt(0) === '5'){
+      digits = '0' + digits;
+    }
+    return 'tel:' + digits;
   }
 
   function esc(str){
