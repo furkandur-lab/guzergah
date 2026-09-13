@@ -186,6 +186,7 @@
     <div style="margin-top:12px; padding-top:12px; border-top:1px solid var(--border); display:flex; gap:8px; flex-wrap:wrap;">
       <button class="btn secondary" id="backupExportBtn" type="button">Yedek İndir</button>
       <label class="file-label">Yedek Yükle<input type="file" id="backupImportInput" accept="application/json,.json"></label>
+      <label class="file-label">Şoför Listesi Yükle (Excel)<input type="file" id="driverImportInput" accept=".xlsx,.xls"></label>
     </div>
   </div>
 
@@ -307,14 +308,22 @@
 
   function getDriver(schoolName, service){
     if(state.drivers[schoolName] && state.drivers[schoolName][service]){
-      return state.drivers[schoolName][service];
+      var d = state.drivers[schoolName][service];
+      return {ad: d.ad||'', tel: d.tel||'', saat: d.saat||'', plaka: d.plaka||'', guzergah: d.guzergah||''};
     }
-    return {ad:'', tel:'', saat:''};
+    return {ad:'', tel:'', saat:'', plaka:'', guzergah:''};
   }
 
-  function setDriver(schoolName, service, ad, tel, saat){
+  function setDriver(schoolName, service, ad, tel, saat, plaka, guzergah){
     if(!state.drivers[schoolName]) state.drivers[schoolName] = {};
-    state.drivers[schoolName][service] = {ad: ad.trim(), tel: tel.trim(), saat: (saat||'').trim()};
+    var existing = state.drivers[schoolName][service] || {};
+    state.drivers[schoolName][service] = {
+      ad: (ad !== undefined ? ad : existing.ad || '').trim(),
+      tel: (tel !== undefined ? tel : existing.tel || '').trim(),
+      saat: (saat !== undefined ? saat : existing.saat || '').trim(),
+      plaka: (plaka !== undefined ? plaka : existing.plaka || '').trim(),
+      guzergah: (guzergah !== undefined ? guzergah : existing.guzergah || '').trim()
+    };
     persistDrivers();
   }
 
@@ -369,6 +378,94 @@
     a.click();
     document.body.removeChild(a);
     setTimeout(function(){ URL.revokeObjectURL(url); }, 1000);
+  }
+
+  function findMatchingSchoolKey(fileName){
+    var target = normalize(fileName);
+    if(!target) return null;
+    var keys = Object.keys(state.schools);
+    for(var i=0;i<keys.length;i++){
+      if(normalize(keys[i]) === target) return keys[i];
+    }
+    for(var i=0;i<keys.length;i++){
+      var nk = normalize(keys[i]);
+      if(nk.indexOf(target) !== -1 || target.indexOf(nk) !== -1) return keys[i];
+    }
+    return null;
+  }
+
+  function parseDriverWorkbook(workbook){
+    var sheetName = workbook.SheetNames[0];
+    var sheet = workbook.Sheets[sheetName];
+    var rows = XLSX.utils.sheet_to_json(sheet, {header:1, raw:false, defval:''});
+    if(!rows.length) throw new Error('Dosya boş görünüyor.');
+    var headers = rows[0];
+    var colMap = {};
+    headers.forEach(function(h, i){
+      var n = normalize(h);
+      if(n.indexOf('okul') !== -1){ colMap.okul = i; }
+      else if(n.indexOf('güzergah') !== -1 || n.indexOf('guzergah') !== -1){ colMap.guzergah = i; }
+      else if(n.indexOf('servis') !== -1){ colMap.servis = i; }
+      else if(n.indexOf('şoför') !== -1 || n.indexOf('sofor') !== -1){ colMap.ad = i; }
+      else if(n.indexOf('plaka') !== -1){ colMap.plaka = i; }
+      else if(n.indexOf('saat') !== -1 || n.indexOf('kalkış') !== -1 || n.indexOf('kalkis') !== -1){ colMap.saat = i; }
+      else if(n.indexOf('iletişim') !== -1 || n.indexOf('iletisim') !== -1 || n.indexOf('telefon') !== -1 || n.indexOf('tel') !== -1 || n.indexOf('gsm') !== -1){ colMap.tel = i; }
+    });
+    if(colMap.okul === undefined || colMap.servis === undefined){
+      throw new Error('Dosyada Okul ve Servis No sütunları bulunamadı.');
+    }
+    var out = [];
+    for(var r = 1; r < rows.length; r++){
+      var row = rows[r];
+      if(!row || !row.length) continue;
+      var get = function(idx){ return idx !== undefined && row[idx] !== undefined ? row[idx].toString().trim() : ''; };
+      var okul = get(colMap.okul);
+      var servis = get(colMap.servis);
+      if(!okul || !servis) continue;
+      out.push({
+        okul: okul,
+        servis: servis,
+        ad: get(colMap.ad),
+        tel: get(colMap.tel),
+        saat: get(colMap.saat),
+        plaka: get(colMap.plaka),
+        guzergah: get(colMap.guzergah)
+      });
+    }
+    if(!out.length) throw new Error('Dosyada satır bulunamadı.');
+    return out;
+  }
+
+  function importDriverFile(file){
+    var reader = new FileReader();
+    reader.onload = function(e){
+      try{
+        var data = new Uint8Array(e.target.result);
+        var wb = XLSX.read(data, {type:'array'});
+        var rows = parseDriverWorkbook(wb);
+        var updated = 0;
+        var unmatchedSchools = {};
+        rows.forEach(function(r){
+          var key = findMatchingSchoolKey(r.okul);
+          if(!key){
+            unmatchedSchools[r.okul] = true;
+            return;
+          }
+          setDriver(key, r.servis, r.ad || undefined, r.tel || undefined, r.saat || undefined, r.plaka || undefined, r.guzergah || undefined);
+          updated++;
+        });
+        render();
+        var msg = updated + ' servis için şoför bilgisi güncellendi.';
+        var unmatchedKeys = Object.keys(unmatchedSchools);
+        if(unmatchedKeys.length){
+          msg += '\n\nEşleşmeyen okul adları (önce bu okulları uygulamaya ekleyin): ' + unmatchedKeys.join(', ');
+        }
+        alert(msg);
+      }catch(err){
+        alert('Dosya okunamadı: ' + err.message);
+      }
+    };
+    reader.readAsArrayBuffer(file);
   }
 
   function importBackupFile(file){
@@ -932,6 +1029,8 @@
     det.appendChild(detailRow('Servis No', s.servis || '-'));
     det.appendChild(detailRow('Kalkış Saati', drv.saat || 'Girilmemiş'));
     det.appendChild(detailRow('Şoför', drv.ad || drv.tel ? personLine(drv.ad, drv.tel) : 'Girilmemiş'));
+    if(drv.plaka) det.appendChild(detailRow('Plaka', drv.plaka));
+    if(drv.guzergah) det.appendChild(detailRow('Güzergah', drv.guzergah));
     det.appendChild(detailRow('Adres', s.adres || '-'));
     det.appendChild(detailRow('Anne', personLine(s.anneAdi, s.anneTel)));
     det.appendChild(detailRow('Baba', personLine(s.babaAdi, s.babaTel)));
@@ -1054,15 +1153,19 @@
       drvTelInput.value = drv.tel;
       var drvSaatInput = el('input', {type:'text', placeholder:'Kalkış saati (örn. 07:15)', style:'max-width:170px;'});
       drvSaatInput.value = drv.saat;
+      var drvPlakaInput = el('input', {type:'text', placeholder:'Plaka (örn. 42C0496)', style:'max-width:150px;'});
+      drvPlakaInput.value = drv.plaka;
+      var drvGuzergahInput = el('input', {type:'text', placeholder:'Güzergah (örn. Yazır Buhara Araplar)'});
+      drvGuzergahInput.value = drv.guzergah;
       var drvSaveBtn = el('button', {
         class:'btn',
         text:'Kaydet',
         onclick: function(){
-          setDriver(state.activeSchool, state.activeService, drvNameInput.value, drvTelInput.value, drvSaatInput.value);
+          setDriver(state.activeSchool, state.activeService, drvNameInput.value, drvTelInput.value, drvSaatInput.value, drvPlakaInput.value, drvGuzergahInput.value);
           render();
         }
       });
-      drvCard.appendChild(el('div', {class:'add-form'}, [drvNameInput, drvTelInput, drvSaatInput, drvSaveBtn]));
+      drvCard.appendChild(el('div', {class:'add-form'}, [drvNameInput, drvTelInput, drvSaatInput, drvPlakaInput, drvGuzergahInput, drvSaveBtn]));
       if(drv.tel){
         drvCard.appendChild(el('a', {href: telHref(drv.tel), class:'btn secondary', style:'display:inline-block; margin-top:10px; text-decoration:none;', text:'Şoförü Ara'}));
       }
@@ -1206,6 +1309,12 @@
         el('span', {class:'k', text:'Şoför'}),
         el('span', {class:'v', text: drv.ad || drv.tel ? (drv.ad||'-') + (drv.tel ? '  ·  ' + drv.tel : '') : 'Girilmemiş'})
       ]));
+      if(drv.plaka){
+        groupCard.appendChild(el('div', {class:'detail-row'}, [
+          el('span', {class:'k', text:'Plaka'}),
+          el('span', {class:'v', text: drv.plaka})
+        ]));
+      }
       var listWrap = el('div', {class:'student-list', style:'margin-top:10px;'});
       g.students.sort(function(a,b){ return (a.adi+a.soyadi).localeCompare(b.adi+b.soyadi, 'tr'); }).forEach(function(s){
         listWrap.appendChild(buildStudentItem(s, g.school, s.adres, false));
@@ -1370,6 +1479,11 @@
   document.getElementById('backupImportInput').addEventListener('change', function(e){
     var file = e.target.files[0];
     if(file) importBackupFile(file);
+    e.target.value = '';
+  });
+  document.getElementById('driverImportInput').addEventListener('change', function(e){
+    var file = e.target.files[0];
+    if(file) importDriverFile(file);
     e.target.value = '';
   });
 
