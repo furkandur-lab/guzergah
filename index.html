@@ -471,6 +471,48 @@
     return 'stu_' + Date.now().toString(36) + '_' + Math.random().toString(36).slice(2,8);
   }
 
+  function parseSinifSube(raw){
+    var s = (raw||'').toString().trim();
+    if(!s) return {sinif:'', sube:''};
+    s = s.replace(/sınıf/gi,'').replace(/sinif/gi,'').trim();
+    s = s.replace(/\.+$/,'').trim();
+    s = s.replace(/\s+/g,' ');
+    if(!s) return {sinif:'', sube:''};
+    var m = s.match(/^(hazırlık|hazirlik|\d+)\s*[-\/\s]?\s*([a-zA-ZçÇğĞıİöÖşŞüÜ]{0,3})$/i);
+    if(m){
+      var grade = m[1];
+      var branch = m[2] ? m[2].toLocaleUpperCase('tr') : '';
+      if(/^haz/i.test(grade)) grade = 'Hazırlık';
+      return {sinif: grade, sube: branch};
+    }
+    return {sinif: s, sube: ''};
+  }
+
+  function splitFullName(full){
+    var s = (full||'').toString().trim().replace(/\s+/g,' ');
+    if(!s) return {adi:'', soyadi:''};
+    var parts = s.split(' ');
+    if(parts.length === 1) return {adi: parts[0], soyadi:''};
+    var soyadi = parts.pop();
+    return {adi: parts.join(' '), soyadi: soyadi};
+  }
+
+  function pickBestServisIndex(rows, candidateIndices){
+    if(candidateIndices.length <= 1) return candidateIndices[0];
+    var scored = candidateIndices.map(function(idx){
+      var numericCount = 0, total = 0;
+      for(var r = 1; r < Math.min(rows.length, 40); r++){
+        var v = rows[r] && rows[r][idx];
+        if(v === undefined || v === null || v === '') continue;
+        total++;
+        if(/^\d+$/.test(v.toString().trim())) numericCount++;
+      }
+      return {idx: idx, ratio: total ? (numericCount/total) : 0};
+    });
+    scored.sort(function(a,b){ return b.ratio - a.ratio; });
+    return scored[0].idx;
+  }
+
   function parseWorkbookToStudents(workbook){
     var sheetName = workbook.SheetNames[0];
     var sheet = workbook.Sheets[sheetName];
@@ -479,22 +521,31 @@
     var headers = rows[0];
     var colMap = {};
     var telIndices = [];
+    var servisIndices = [];
     headers.forEach(function(h, i){
       var n = normalize(h);
       if(n.indexOf('sınıf') !== -1 || n.indexOf('sinif') !== -1){ colMap.sinif = i; }
       else if(n.indexOf('şube') !== -1 || n.indexOf('sube') !== -1){ colMap.sube = i; }
       else if(n === 'no'){ colMap.no = i; }
       else if(n.indexOf('soyad') !== -1){ colMap.soyadi = i; }
+      else if((n.indexOf('öğrenci') !== -1 || n.indexOf('ogrenci') !== -1) && colMap.fullName === undefined){ colMap.fullName = i; }
       else if((n.indexOf('adı') !== -1 || n.indexOf('adi') !== -1 || n === 'ad') && colMap.adi === undefined){ colMap.adi = i; }
-      else if(n.indexOf('servis') !== -1){ colMap.servis = i; }
+      else if(n.indexOf('servis') !== -1){ servisIndices.push(i); }
       else if(n.indexOf('adres') !== -1){ colMap.adres = i; }
-      else if(n.indexOf('anne') !== -1){ colMap.anne = i; }
-      else if(n.indexOf('baba') !== -1){ colMap.baba = i; }
-      else if(n.indexOf('tel') !== -1){ telIndices.push(i); }
+      else if(n.indexOf('tel') !== -1 || n.indexOf('gsm') !== -1){ telIndices.push(i); }
+      else if(n.indexOf('meslek') !== -1){ /* meslek sütunları görmezden gelinir */ }
+      else if(n.indexOf('anne') !== -1 && colMap.anne === undefined){ colMap.anne = i; }
+      else if(n.indexOf('baba') !== -1 && colMap.baba === undefined){ colMap.baba = i; }
     });
 
-    if(colMap.adi === undefined || colMap.soyadi === undefined || colMap.servis === undefined){
-      throw new Error('Dosyada Adı, Soyadı ve Servis sütunları bulunamadı. Sütun başlıklarını kontrol edin.');
+    if(servisIndices.length){
+      colMap.servis = pickBestServisIndex(rows, servisIndices);
+    }
+
+    var hasNameCols = colMap.adi !== undefined && colMap.soyadi !== undefined;
+    var hasFullNameCol = colMap.fullName !== undefined;
+    if((!hasNameCols && !hasFullNameCol) || colMap.servis === undefined){
+      throw new Error('Dosyada Adı/Soyadı (veya Öğrenci) ve Servis sütunları bulunamadı. Sütun başlıklarını kontrol edin.');
     }
 
     var anneTelIdx, babaTelIdx;
@@ -516,13 +567,32 @@
       var row = rows[r];
       if(!row || !row.length) continue;
       var get = function(idx){ return idx !== undefined && row[idx] !== undefined ? row[idx].toString().trim() : ''; };
-      var adi = get(colMap.adi);
-      var soyadi = get(colMap.soyadi);
+
+      var adi, soyadi;
+      if(hasNameCols){
+        adi = get(colMap.adi);
+        soyadi = get(colMap.soyadi);
+      } else {
+        var np = splitFullName(get(colMap.fullName));
+        adi = np.adi;
+        soyadi = np.soyadi;
+      }
       if(!adi && !soyadi) continue;
+
+      var sinifVal, subeVal;
+      if(colMap.sube !== undefined){
+        sinifVal = get(colMap.sinif);
+        subeVal = get(colMap.sube);
+      } else {
+        var sp = parseSinifSube(get(colMap.sinif));
+        sinifVal = sp.sinif;
+        subeVal = sp.sube;
+      }
+
       students.push({
         id: genId(),
-        sinif: get(colMap.sinif),
-        sube: get(colMap.sube),
+        sinif: sinifVal,
+        sube: subeVal,
         no: get(colMap.no),
         adi: adi,
         soyadi: soyadi,
