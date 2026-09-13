@@ -868,6 +868,34 @@
     return card;
   }
 
+  function buildStudentItem(s, schoolName, metaText, showBadge){
+    var wrapper = el('div', {});
+    var detailSlot = el('div', {});
+    var rowChildren = [
+      el('div', {}, [
+        el('div', {class:'s-name', text: s.adi + ' ' + s.soyadi}),
+        el('div', {class:'s-meta', text: metaText})
+      ])
+    ];
+    if(showBadge){
+      rowChildren.push(el('div', {class:'s-badge', text:'Servis ' + s.servis}));
+    }
+    var row = el('div', {
+      class:'student-row',
+      onclick: function(){
+        if(detailSlot.childNodes.length){
+          detailSlot.innerHTML = '';
+        } else {
+          renderStudentDetail(detailSlot, s, schoolName);
+          detailSlot.scrollIntoView({behavior:'smooth', block:'nearest'});
+        }
+      }
+    }, rowChildren);
+    wrapper.appendChild(row);
+    wrapper.appendChild(detailSlot);
+    return wrapper;
+  }
+
   function studentLabel(s){
     var meta = [];
     if(s.sinif || s.sube) meta.push((s.sinif||'') + (s.sube ? '/' + s.sube : ''));
@@ -1054,25 +1082,10 @@
       listCard.appendChild(listHeader);
       var listWrap = el('div', {class:'student-list'});
       list.forEach(function(s){
-        var row = el('div', {
-          class:'student-row',
-          onclick: function(){
-            var detailHolder = document.getElementById('detailHolder');
-            renderStudentDetail(detailHolder, s, state.activeSchool);
-            detailHolder.scrollIntoView({behavior:'smooth', block:'nearest'});
-          }
-        }, [
-          el('div', {}, [
-            el('div', {class:'s-name', text: s.adi + ' ' + s.soyadi}),
-            el('div', {class:'s-meta', text: studentLabel(s) + (s.no ? '  ·  No ' + s.no : '')})
-          ]),
-          el('div', {class:'s-badge', text:'Servis ' + s.servis})
-        ]);
-        listWrap.appendChild(row);
+        listWrap.appendChild(buildStudentItem(s, state.activeSchool, studentLabel(s) + (s.no ? '  ·  No ' + s.no : ''), true));
       });
       listCard.appendChild(listWrap);
       wrap.appendChild(listCard);
-      wrap.appendChild(el('div', {id:'detailHolder'}));
     }
   }
 
@@ -1093,7 +1106,6 @@
     card.appendChild(searchBox);
     card.appendChild(el('div', {id:'searchResults'}));
     wrap.appendChild(card);
-    wrap.appendChild(el('div', {id:'detailHolder'}));
     renderSearchResults();
 
     setTimeout(function(){ input.focus(); }, 0);
@@ -1123,21 +1135,7 @@
     resWrap.appendChild(el('div', {class:'status', text: matches.length + ' öğrenci'}));
     var listWrap = el('div', {class:'student-list'});
     matches.forEach(function(m){
-      var row = el('div', {
-        class:'student-row',
-        onclick: function(){
-          var detailHolder = document.getElementById('detailHolder');
-          renderStudentDetail(detailHolder, m.s, m.school);
-          detailHolder.scrollIntoView({behavior:'smooth', block:'nearest'});
-        }
-      }, [
-        el('div', {}, [
-          el('div', {class:'s-name', text: m.s.adi + ' ' + m.s.soyadi}),
-          el('div', {class:'s-meta', text: m.school + '  ·  ' + studentLabel(m.s)})
-        ]),
-        el('div', {class:'s-badge', text:'Servis ' + m.s.servis})
-      ]);
-      listWrap.appendChild(row);
+      listWrap.appendChild(buildStudentItem(m.s, m.school, m.school + '  ·  ' + studentLabel(m.s), true));
     });
     resWrap.appendChild(listWrap);
   }
@@ -1156,7 +1154,6 @@
     card.appendChild(searchBox);
     card.appendChild(el('div', {id:'mahalleResults'}));
     wrap.appendChild(card);
-    wrap.appendChild(el('div', {id:'detailHolder'}));
     renderMahalleResults();
 
     setTimeout(function(){ input.focus(); }, 0);
@@ -1211,20 +1208,7 @@
       ]));
       var listWrap = el('div', {class:'student-list', style:'margin-top:10px;'});
       g.students.sort(function(a,b){ return (a.adi+a.soyadi).localeCompare(b.adi+b.soyadi, 'tr'); }).forEach(function(s){
-        var row = el('div', {
-          class:'student-row',
-          onclick: function(){
-            var detailHolder = document.getElementById('detailHolder');
-            renderStudentDetail(detailHolder, s, g.school);
-            detailHolder.scrollIntoView({behavior:'smooth', block:'nearest'});
-          }
-        }, [
-          el('div', {}, [
-            el('div', {class:'s-name', text: s.adi + ' ' + s.soyadi}),
-            el('div', {class:'s-meta', text: s.adres})
-          ])
-        ]);
-        listWrap.appendChild(row);
+        listWrap.appendChild(buildStudentItem(s, g.school, s.adres, false));
       });
       groupCard.appendChild(listWrap);
       resWrap.appendChild(groupCard);
